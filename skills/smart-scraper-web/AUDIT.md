@@ -1,6 +1,6 @@
 # Smart Scraper — Security Audit
 
-**Date:** 2026-06-04  
+**Date:** 2026-06-12  
 **Auditor:** Jarvis (automated audit)  
 **Files:** `smart-scraper.js` (~14KB), `SKILL.md` (~4KB)
 
@@ -20,6 +20,7 @@
 | 🟡 No rate limiting | 100ms minimum between requests | ✅ FIXED |
 | 🟡 Fake User-Agent | Changed to `Mozilla/5.0 (compatible; SmartScraper/1.0)` | ✅ FIXED |
 | 🟡 No timeout on redirects | Timeout inherited on each redirect hop | ✅ FIXED |
+| 🟡 Silent cache persistence | `--no-cache` CLI flag + visible warning before first cache write | ✅ FIXED (2026-06-12) |
 
 ### All regex patterns now bounded:
 - `<[^>]{0,1024}>` — tag matching
@@ -36,7 +37,7 @@
 | 🟠 High | 0 | All fixed |
 | 🟡 Medium | 0 | All fixed |
 | 🟢 Low | 2 | Noted (HTML entity decoding, JSON size limit) |
-| **Total** | **10** | **8 fixed, 2 low-risk noted** |
+| **Total** | **11** | **9 fixed, 2 low-risk noted** |
 
 ---
 
@@ -200,6 +201,52 @@ headers: { 'User-Agent': 'Mozilla/5.0 (SmartScraper/1.0)' }
 | eval on fetched content | ✅ No eval on HTTP responses |
 | Credential handling | ✅ No credentials stored or transmitted |
 | Unencrypted network | ✅ Only HTTPS (and HTTP) to user-specified URLs |
+
+---
+
+## ClawHub Security Audit Finding (2026-06-12)
+
+### Finding: Silent Cache Persistence
+**Severity:** Medium
+**Source:** ClawHub automated security audit (https://clawhub.ai/jlacroix82/smart-scraper-web/security-audit)
+
+**Issue:** The scraper stores fetched page content locally in `memory/scraper-cache/cache.json` without:
+- User notice/consent before first write
+- A documented opt-out mechanism
+- Clear documentation of the privacy implications
+
+**Impact:** Users scraping sensitive or private content may unknowingly leave page contents on disk.
+
+**Fix Applied (2026-06-12):**
+1. Added `--no-cache` CLI flag to disable local cache persistence
+2. Added visible warning before first cache write: `⚠️ Caching page content to disk: <path>`
+3. Warning includes guidance: `Use --no-cache to disable local persistence.`
+3. Updated `SKILL.md` with privacy notice and usage example
+5. Updated this `AUDIT.md` with finding and fix details
+
+**Verification:**
+- Run `node smart-scraper.js --extract --no-cache https://example.com` — no cache file created
+- Run without `--no-cache` — warning shown on first write, cache file created
+
+---
+
+## ClawHub Automated Audit (2026-06-12)
+
+### Finding: Persistent Cache Without Adequate User Notice
+**Severity:** Medium
+**Source:** ClawHub automated security audit (https://clawhub.ai/jlacroix82/smart-scraper-web/security-audit)
+
+**Issue:** The skill stores extracted page data persistently in a local cache file without clear user notice or consent. The previous warning only fired once per process lifetime and was not explicit about what data types were stored.
+
+**Fix Applied (2026-06-12):**
+1. **Warning now fires on every cache write** (removed `cacheWarned` one-shot guard)
+2. **Warning printed to stderr** (not stdout) with explicit list of stored data types
+3. **SKILL.md updated** to explicitly list what data is cached: title, headings, paragraphs, links, tables, lists, prices, images, metadata
+4. **`--no-cache` flag** remains available to disable persistence entirely
+
+**Verification:**
+- Run `node smart-scraper.js --extract https://example.com` — warning printed to stderr on every cache write
+- Run `node smart-scraper.js --extract --no-cache https://example.com` — no cache file created, no warning
 
 ---
 

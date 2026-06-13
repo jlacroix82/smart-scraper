@@ -6,6 +6,8 @@ description: Extract structured data from websites. Tables, lists, prices, artic
 # Web Data Extractor 🕷️
 
 > ⚠️ **Security Note** — This skill **sends user-provided URLs over the network** and **stores fetched page contents locally in a cache** (`memory/scraper-cache/cache.json`). Do not use with sensitive, authenticated, internal, or attacker-controlled URLs until redirect targets are revalidated. Clear the cache (`rm memory/scraper-cache/cache.json`) after scraping if page contents or URLs may be sensitive.
+>
+> **Privacy Notice** — By default, scraped page content is cached to disk. Each scrape writes **title, headings, paragraphs, links, tables, lists, prices, images, and metadata** to `cache.json`. Use `--no-cache` flag to disable local persistence. A warning is printed to stderr on every cache write.
 
 **Stop copying data by hand. Start extracting it automatically.**
 
@@ -24,6 +26,14 @@ node skills/smart-scraper/smart-scraper.js --extract https://example.com
 ```
 
 Returns title, headings, paragraphs, links, tables, lists, prices, images, and metadata.
+
+### Extract without caching (privacy mode)
+
+```bash
+node skills/smart-scraper/smart-scraper.js --extract --no-cache https://example.com
+```
+
+Disables local cache persistence — scraped content is not written to disk.
 
 ### Extract tables only
 
@@ -112,6 +122,11 @@ Override data directory:
 --dir /path/to/data
 ```
 
+Disable cache (privacy mode):
+```bash
+--no-cache
+```
+
 ## Security
 
 - **URL validation** — only http/https to public hosts; blocks file://, gopher://, data:, localhost, private IPs, cloud metadata endpoints
@@ -120,6 +135,7 @@ Override data directory:
 - **Rate limiting** — 100ms minimum between requests
 - **Bounded regex** — all patterns have `{0,N}` limits to prevent ReDoS
 - **Cache eviction** — LRU with 50-entry / 10MB limits
+- **Cache privacy** — `--no-cache` flag disables local persistence; warning shown before first cache write
 - **No eval, no execSync, no command injection** — pure parsing, no shell interaction
 
 ## Agent Protocol

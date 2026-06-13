@@ -9,7 +9,6 @@
  *   --extract --price <url>              → Extract prices from page
  *   --extract --article <url>            → Extract article content
  *   --extract --all <url>                → Extract everything
- *   --extract --no-cache <url>           → Extract without caching to disk
  *   --parse <html>                       → Parse raw HTML
  *   --status                             → Scraping status
  */
@@ -22,7 +21,9 @@ const https = require('https');
 const WORKSPACE = (() => {
   if (process.env.SCRAPER_DIR) return process.env.SCRAPER_DIR;
   let dir = __dirname;
+  const root = path.parse(dir).root;
   for (let i = 0; i < 10; i++) {
+    if (path.resolve(dir) === root) break;
     if (fs.existsSync(path.join(dir, 'MEMORY.md'))) return dir;
     dir = path.resolve(dir, '..');
   }
@@ -36,6 +37,10 @@ const CACHE_FILE = path.join(CACHE_DIR, 'cache.json');
 const MAX_CACHE_ENTRIES = 50;
 const MAX_CACHE_BYTES = 10 * 1024 * 1024; // 10MB
 const CACHE_TTL = 300000; // 5 minutes
+
+// ── CLI flags ────────────────────────────────────────────────────────────────
+let useCache = true;
+let cacheWarned = false;
 
 // ── Redirect limits ──────────────────────────────────────────────────────────
 const MAX_REDIRECTS = 5;
@@ -185,8 +190,8 @@ async function fetchPage(url, redirectCount = 0, originalUrl = null) {
 
 function stripHtml(html) {
   return html
-    .replace(/<script[^>]*>[\s\S]{0,1000000}?<\/script>/gi, '')
-    .replace(/<style[^>]*>[\s\S]{0,1000000}?<\/style>/gi, '')
+    .replace(/<script[^>]*>[\s\S]{0,50000}?<\/script>/gi, '')
+    .replace(/<style[^>]*>[\s\S]{0,50000}?<\/style>/gi, '')
     .replace(/<[^>]{0,1024}>/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -287,7 +292,7 @@ function parseHtml(html) {
 
 // ─── EXTRACT ───────────────────────────────────────────────────────────────
 
-async function extractFromUrl(url, mode = 'all', cacheEnabled = true) {
+async function extractFromUrl(url, mode = 'all') {
   // Validate URL before fetching
   const validation = validateUrl(url);
   if (!validation.valid) {
@@ -300,13 +305,30 @@ async function extractFromUrl(url, mode = 'all', cacheEnabled = true) {
   const cache = loadJSON(CACHE_FILE, {});
   const cacheKey = url;
   let data = null;
-  let cached = false;
-
-  if (cacheEnabled && cache[cacheKey] && (Date.now() - cache[cacheKey].timestamp < CACHE_TTL)) {
+  if (cache[cacheKey] && (Date.now() - cache[cacheKey].timestamp < CACHE_TTL)) {
     console.log(`[smart-scraper] Cache hit: ${url}`);
     data = cache[cacheKey].data;
-    cached = true;
   } else {
+    // Evict expired entries
+    const now = Date.now();
+    for (const [key, entry] of Object.entries(cache)) {
+      if (now - entry.timestamp > CACHE_TTL) {
+        delete cache[key];
+      }
+    }
+    // Evict oldest if over limit
+    while (Object.keys(cache).length >= MAX_CACHE_ENTRIES) {
+      let oldestKey = null;
+      let oldestTime = Infinity;
+      for (const [key, entry] of Object.entries(cache)) {
+        if (entry.timestamp < oldestTime) {
+          oldestTime = entry.timestamp;
+          oldestKey = key;
+        }
+      }
+      if (oldestKey) delete cache[oldestKey];
+    }
+
     // Fetch page
     const html = await fetchPage(url);
 
@@ -316,32 +338,13 @@ async function extractFromUrl(url, mode = 'all', cacheEnabled = true) {
     data.fetchedAt = new Date().toISOString();
     data.contentLength = html.length;
 
-    // Cache (opt-in: warn before storing)
-    if (cacheEnabled) {
-      console.warn(`[smart-scraper] ⚠️  Caching page content to disk: ${CACHE_FILE}`);
-      console.warn(`[smart-scraper]    Page content may contain sensitive data. Use --no-cache to skip.`);
-
-      // Evict expired entries
-      const now = Date.now();
-      for (const [key, entry] of Object.entries(cache)) {
-        if (now - entry.timestamp > CACHE_TTL) {
-          delete cache[key];
-        }
+    // Cache (only if --no-cache not specified)
+    if (useCache) {
+      if (!cacheWarned) {
+        console.warn(`⚠️  Caching page content to disk: ${CACHE_FILE}`);
+        console.warn(`    Use --no-cache to disable local persistence.`);
+        cacheWarned = true;
       }
-      // Evict oldest if over limit
-      while (Object.keys(cache).length >= MAX_CACHE_ENTRIES) {
-        let oldestKey = null;
-        let oldestTime = Infinity;
-        for (const [key, entry] of Object.entries(cache)) {
-          if (entry.timestamp < oldestTime) {
-            oldestTime = entry.timestamp;
-            oldestKey = key;
-          }
-        }
-        if (oldestKey) delete cache[oldestKey];
-      }
-      saveJSON(CACHE_FILE, cache);
-
       cache[cacheKey] = { timestamp: Date.now(), data };
       saveJSON(CACHE_FILE, cache);
     }
@@ -429,7 +432,6 @@ function formatBytes(bytes) {
 const args = process.argv.slice(2);
 let cliMode = 'status';
 let searchQuery = null;
-let noCache = false;
 
 for (let i = 0; i < args.length; i++) {
   if (args[i] === '--extract') cliMode = 'extract';
@@ -440,7 +442,7 @@ for (let i = 0; i < args.length; i++) {
   if (args[i] === '--price') searchQuery = 'price';
   if (args[i] === '--article') searchQuery = 'article';
   if (args[i] === '--all') searchQuery = 'all';
-  if (args[i] === '--no-cache') noCache = true;
+  if (args[i] === '--no-cache') useCache = false;
   if (args[i] === '--dir' && i + 1 < args.length) process.env.SCRAPER_DIR = args[i + 1];
 }
 
@@ -457,9 +459,9 @@ function findArg() {
     case 'extract': {
       const url = findArg();
       if (!url) {
-        console.log('Usage: smart-scraper.js --extract [--no-cache] <url>');
+        console.log('Usage: smart-scraper.js --extract <url>');
       } else {
-        await extractFromUrl(url, searchQuery || 'all', !noCache);
+        await extractFromUrl(url, searchQuery || 'all');
       }
       break;
     }

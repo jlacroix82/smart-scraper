@@ -21,7 +21,9 @@ const https = require('https');
 const WORKSPACE = (() => {
   if (process.env.SCRAPER_DIR) return process.env.SCRAPER_DIR;
   let dir = __dirname;
+  const root = path.parse(dir).root;
   for (let i = 0; i < 10; i++) {
+    if (path.resolve(dir) === root) break;
     if (fs.existsSync(path.join(dir, 'MEMORY.md'))) return dir;
     dir = path.resolve(dir, '..');
   }
@@ -35,6 +37,9 @@ const CACHE_FILE = path.join(CACHE_DIR, 'cache.json');
 const MAX_CACHE_ENTRIES = 50;
 const MAX_CACHE_BYTES = 10 * 1024 * 1024; // 10MB
 const CACHE_TTL = 300000; // 5 minutes
+
+// ── CLI flags ────────────────────────────────────────────────────────────────
+let useCache = true;
 
 // ── Redirect limits ──────────────────────────────────────────────────────────
 const MAX_REDIRECTS = 5;
@@ -184,8 +189,8 @@ async function fetchPage(url, redirectCount = 0, originalUrl = null) {
 
 function stripHtml(html) {
   return html
-    .replace(/<script[^>]*>[\s\S]{0,1000000}?<\/script>/gi, '')
-    .replace(/<style[^>]*>[\s\S]{0,1000000}?<\/style>/gi, '')
+    .replace(/<script[^>]*>[\s\S]{0,50000}?<\/script>/gi, '')
+    .replace(/<style[^>]*>[\s\S]{0,50000}?<\/style>/gi, '')
     .replace(/<[^>]{0,1024}>/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -322,7 +327,6 @@ async function extractFromUrl(url, mode = 'all') {
       }
       if (oldestKey) delete cache[oldestKey];
     }
-    saveJSON(CACHE_FILE, cache);
 
     // Fetch page
     const html = await fetchPage(url);
@@ -333,9 +337,26 @@ async function extractFromUrl(url, mode = 'all') {
     data.fetchedAt = new Date().toISOString();
     data.contentLength = html.length;
 
-    // Cache
-    cache[cacheKey] = { timestamp: Date.now(), data };
-    saveJSON(CACHE_FILE, cache);
+    // Cache (only if --no-cache not specified)
+    if (useCache) {
+      // SECURITY: Warn every time caching is active — privacy must be visible
+      console.error(`⚠️  [smart-scraper] Caching scraped data to disk: ${CACHE_FILE}`);
+      console.error(`    Stored: title, headings, paragraphs, links, tables, lists, prices, images, metadata`);
+      console.error(`    To disable: add --no-cache to your command`);
+      const cacheData = {
+        title: data.title,
+        headings: data.headings.length,
+        paragraphs: data.paragraphs.length,
+        links: data.links.length,
+        tables: data.tables.length,
+        lists: data.lists.length,
+        prices: data.prices.length,
+        images: data.images.length,
+        metadataKeys: Object.keys(data.metadata).length
+      };
+      cache[cacheKey] = { timestamp: Date.now(), data: cacheData };
+      saveJSON(CACHE_FILE, cache);
+    }
   }
   
   // Output based on mode
@@ -430,6 +451,7 @@ for (let i = 0; i < args.length; i++) {
   if (args[i] === '--price') searchQuery = 'price';
   if (args[i] === '--article') searchQuery = 'article';
   if (args[i] === '--all') searchQuery = 'all';
+  if (args[i] === '--no-cache') useCache = false;
   if (args[i] === '--dir' && i + 1 < args.length) process.env.SCRAPER_DIR = args[i + 1];
 }
 
