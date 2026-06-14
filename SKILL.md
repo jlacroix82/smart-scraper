@@ -4,6 +4,7 @@ description: Extract structured data from websites. Tables, lists, prices, artic
 capabilities:
   - network: outbound http/https to public hosts (SSRF-protected)
   - cache: stores fetched pages locally (configurable, opt-in with --no-cache)
+  - user-consent: caching behavior requires explicit user consent
 ---
 
 # Web Data Extractor 🕷️
@@ -105,11 +106,14 @@ node skills/smart-scraper/smart-scraper.js --status
 - LRU eviction: max 50 entries or 10MB
 - Reduces redundant network calls
 - Cache stats via `--status`
-- **Cache warning**: Caching writes page content to disk. Use `--no-cache` to skip.
+- **Cache warning**: Caching writes page content to disk. Use `--cache` to enable caching (opt-in by default).
+- **Privacy notice**: Cached data may contain sensitive content (article text, metadata, links, prices, etc.). Clear cache after scraping sensitive pages (`rm memory/scraper-cache/cache.json`).
+- **User Consent Required**: This skill will store extracted web page data locally on your device. If you do not wish to store any data locally, use the `--no-cache` flag. To enable caching, explicitly add the `--cache` flag to your command.
 
 ### Privacy
 
 - **`--no-cache`** — Extract without storing any data locally (privacy mode)
+- **`--cache`** — Enable caching of scraped content locally (opt-in by default)
 - Cached files may contain sensitive page content — clear cache after scraping sensitive pages
 - Cache location: `memory/scraper-cache/cache.json` (or `--dir` to override)
 

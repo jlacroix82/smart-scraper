@@ -39,7 +39,7 @@ const MAX_CACHE_BYTES = 10 * 1024 * 1024; // 10MB
 const CACHE_TTL = 300000; // 5 minutes
 
 // ── CLI flags ────────────────────────────────────────────────────────────────
-let useCache = true;
+let useCache = false; // Cache is now opt-in by default for privacy
 
 // ── Redirect limits ──────────────────────────────────────────────────────────
 const MAX_REDIRECTS = 5;
@@ -452,6 +452,7 @@ for (let i = 0; i < args.length; i++) {
   if (args[i] === '--article') searchQuery = 'article';
   if (args[i] === '--all') searchQuery = 'all';
   if (args[i] === '--no-cache') useCache = false;
+  if (args[i] === '--cache') useCache = true;
   if (args[i] === '--dir' && i + 1 < args.length) process.env.SCRAPER_DIR = args[i + 1];
 }
 
