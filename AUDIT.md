@@ -42,125 +42,127 @@
 
 ---
 
-## Findings
+## Findings (All Resolved)
 
-### 🔴 CRITICAL
+> All critical and high findings below were present in the initial audit and have been **fully remediated**. The original issue descriptions are retained for reference.
 
-#### 1. SSRF — No URL Validation Before Fetch
-**Severity:** Critical  
+### 🔴 CRITICAL (All Resolved)
+
+#### 1. SSRF — No URL Validation Before Fetch ✅ FIXED
+**Severity:** Critical (resolved)  
 **Location:** `fetchPage()`  
-**Issue:** The URL from `--extract <url>` is passed directly to `http.get()` / `https.get()` with no validation. Any URL scheme is accepted — `file://`, `http://localhost`, `https://169.254.169.254` (AWS metadata), `gopher://`, etc.
+**Original Issue:** The URL from `--extract <url>` was passed directly to `http.get()` / `https.get()` with no validation. Any URL scheme was accepted — `file://`, `http://localhost`, `https://169.254.169.254` (AWS metadata), `gopher://`, etc.
 
-**Impact:** An agent or user could fetch internal services, cloud metadata endpoints, or local files via `file://` URLs.
+**Original Impact:** An agent or user could fetch internal services, cloud metadata endpoints, or local files via `file://` URLs.
 
-**Fix:** Validate URL scheme (http/https only), reject private IP ranges, reject `file://`/`gopher://`/`data:` URLs.
+**Remediation:** URL validation added — blocks `file://`, `gopher://`, `data:`, `javascript://`, `ftp://`, localhost, private IPs, and cloud metadata (169.254.169.254). Only http/https schemes allowed.
 
 ---
 
-#### 2. SSRF — Redirect Following Has No Loop Limit
-**Severity:** Critical  
+#### 2. SSRF — Redirect Following Has No Loop Limit ✅ FIXED
+**Severity:** Critical (resolved)  
 **Location:** `fetchPage()`  
-**Issue:** Redirects are followed recursively with no maximum depth. A malicious URL that returns a redirect loop or a very long redirect chain will cause infinite recursion → stack overflow → DoS.
+**Original Issue:** Redirects were followed recursively with no maximum depth. A malicious URL that returns a redirect loop or a very long redirect chain could cause infinite recursion → stack overflow → DoS.
 
-**Impact:** Denial of service via redirect loop. Also enables SSRF by redirecting to an internal IP after an initial external redirect.
+**Original Impact:** Denial of service via redirect loop. Also enabled SSRF by redirecting to an internal IP after an initial external redirect.
 
-**Fix:** Add a `redirectCount` parameter with a max of 5. Reject redirects to private/internal IP ranges.
+**Remediation:** `MAX_REDIRECTS = 5` added with redirect count tracking. Redirects to private/internal IP ranges are rejected.
 
 ---
 
-### 🟠 HIGH
+### 🟠 HIGH (All Resolved)
 
-#### 3. Regex ReDoS — `<[^>]+>` Pattern
-**Severity:** High (theoretical)  
+#### 3. Regex ReDoS — `<[^>]+>` Pattern ✅ FIXED
+**Severity:** High (resolved)  
 **Location:** `stripHtml()`  
-**Issue:** The pattern `<[^>]+>` is a classic ReDoS vector. While V8's regex engine handles it well in practice (negated classes don't backtrack), it's still a documented vulnerability class.
+**Original Issue:** The pattern `<[^>]+>` was a classic ReDoS vector. While V8's regex engine handles it well in practice, it was a documented vulnerability class.
 
-**Impact:** Theoretical DoS with crafted HTML input. Low practical risk with V8.
+**Original Impact:** Theoretical DoS with crafted HTML input.
 
-**Fix:** Replace with a bounded pattern: `/<[^>]{0,1024}>/g`
+**Remediation:** Replaced with bounded pattern: `/<[^>]{0,1024}>/g`
 
 ---
 
-#### 4. Regex ReDoS — `<table[\s\S]*?</table>`
-**Severity:** High  
+#### 4. Regex ReDoS — `<table[\s\S]*?</table>` ✅ FIXED
+**Severity:** High (resolved)  
 **Location:** `parseHtml()`  
-**Issue:** `<table[\s\S]*?</table>` uses non-greedy cross-line matching on unbounded input.
+**Original Issue:** `<table[\s\S]*?</table>` used non-greedy cross-line matching on unbounded input.
 
-**Impact:** CPU exhaustion on pages with unclosed `<table>` tags in large documents.
+**Original Impact:** CPU exhaustion on pages with unclosed `<table>` tags in large documents.
 
-**Fix:** Add a max character limit: `<table[\s\S]{0,500000}?</table>`
+**Remediation:** Bounded to `{0,500000}`: `<table[\s\S]{0,500000}?</table>`
 
 ---
 
-#### 5. Cache Grows Indefinitely — No Eviction
-**Severity:** High  
+#### 5. Cache Grows Indefinitely — No Eviction ✅ FIXED
+**Severity:** High (resolved)  
 **Location:** `extractFromUrl()`  
-**Issue:** Cache entries are written to `cache.json` but never evicted.
+**Original Issue:** Cache entries were written to `cache.json` but never evicted.
 
-**Impact:** Disk space exhaustion over time. Cache becomes slower as it grows.
+**Original Impact:** Disk space exhaustion over time. Cache became slower as it grew.
 
-**Fix:** Implement LRU eviction (max N entries or max size). Remove expired entries on each access.
+**Remediation:** LRU eviction implemented: max 50 entries / 10MB with TTL cleanup.
 
 ---
 
-### 🟡 MEDIUM
+### 🟡 MEDIUM (All Resolved)
 
-#### 6. No Rate Limiting / Request Throttling
-**Severity:** Medium  
+#### 6. No Rate Limiting / Request Throttling ✅ FIXED
+**Severity:** Medium (resolved)  
 **Location:** `fetchPage()`  
-**Issue:** No rate limiting between requests.
+**Original Issue:** No rate limiting between requests.
 
-**Impact:** IP blocking, abuse detection, wasted bandwidth.
+**Original Impact:** IP blocking, abuse detection, wasted bandwidth.
 
-**Fix:** Add configurable delay between requests (e.g., 100ms default).
+**Remediation:** 100ms minimum delay between requests added.
 
 ---
 
-#### 7. User-Agent Spoofing
-**Severity:** Medium  
+#### 7. User-Agent Spoofing ✅ FIXED
+**Severity:** Medium (resolved)  
 **Location:** `fetchPage()`  
-**Issue:** Uses a fake User-Agent which is easily detectable.
+**Original Issue:** Used a fake User-Agent which was easily detectable.
 
-**Impact:** IP blocking, ToS violation.
+**Original Impact:** IP blocking, ToS violation.
 
-**Fix:** Use a more realistic User-Agent or make it configurable.
+**Remediation:** Changed to realistic User-Agent: `Mozilla/5.0 (compatible; SmartScraper/1.0)`
 
 ---
 
-#### 8. No Timeout on Redirect Resolution
-**Severity:** Medium  
+#### 8. No Timeout on Redirect Resolution ✅ FIXED
+**Severity:** Medium (resolved)  
 **Location:** `fetchPage()`  
-**Issue:** The redirect `fetchPage()` call inherits no timeout.
+**Original Issue:** The redirect `fetchPage()` call inherited no timeout.
 
-**Impact:** Resource exhaustion, stuck requests.
+**Original Impact:** Resource exhaustion, stuck requests.
 
-**Fix:** Pass timeout to recursive calls.
+**Remediation:** Timeout inherited on each redirect hop.
 
 ---
 
-#### 9. Silent Cache Persistence (Data Exfiltration)
-**Severity:** Medium  
+#### 9. Silent Cache Persistence (Data Exfiltration) ✅ FIXED
+**Severity:** Medium (resolved)  
 **Location:** `extractFromUrl()`  
-**Issue:** Scraper silently stores parsed content on disk without disclosure or consent.
+**Original Issue:** Scraper silently stored parsed content on disk without disclosure or consent.
 
-**Impact:** Cached files may contain sensitive page content, URLs, or metadata.
+**Original Impact:** Cached files may contain sensitive page content, URLs, or metadata.
 
-**Fix:** 
-- Added `--no-cache` flag for privacy mode (no local storage)
-- Added visible warning before caching: `⚠️ Caching page content to disk`
-- Documented cache location and privacy implications in SKILL.md
+**Remediation:**
+- `--no-cache` flag for privacy mode (no local storage)
+- Visible warning before caching: `⚠️ Caching page content to disk`
+- Cache documented in SKILL.md with privacy implications
 - Cache is opt-in via `--no-cache` for sensitive material
 
 ---
 
-#### 10. Manifest Missing Capability Declarations
-**Severity:** Medium  
+#### 10. Manifest Missing Capability Declarations ✅ FIXED
+**Severity:** Medium (resolved)  
 **Location:** Skill manifest  
-**Issue:** No manifest.json declaring network access and caching permissions.
+**Original Issue:** No manifest.json declaring network access and caching permissions.
 
-**Impact:** Agents cannot determine what permissions the skill requires before using it.
+**Original Impact:** Agents could not determine what permissions the skill requires before using it.
 
-**Fix:** Created `manifest.json` with declared capabilities:
+**Remediation:** Created `manifest.json` with declared capabilities:
 - Network: outbound http/https with SSRF protection
 - Cache: location, limits, opt-out flag
 - File I/O: read/write paths
@@ -168,7 +170,7 @@
 
 ---
 
-### 🟢 LOW
+### 🟢 LOW (Noted — Not Critical)
 
 #### 11. JSON Parse — No Size Limit
 **Severity:** Low  
@@ -177,7 +179,7 @@
 
 **Impact:** Minimal — the try/catch provides protection.
 
-**Fix:** Add a max file size check before parsing.
+**Status:** Noted as low-risk. Fix (max file size check before parsing) deferred.
 
 ---
 
@@ -188,7 +190,7 @@
 
 **Impact:** Minor — extracted text may have entity codes instead of readable characters.
 
-**Fix:** Add HTML entity decoding.
+**Status:** Noted as low-risk. Fix (HTML entity decoding) deferred.
 
 ---
 
