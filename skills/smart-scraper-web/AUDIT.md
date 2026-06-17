@@ -41,153 +41,57 @@
 
 ---
 
-## Findings
+## Resolved Findings
 
-### 🔴 CRITICAL
+> **Note:** All critical, high, and medium findings below were fixed on 2026-06-12. They are retained here for reference.
+
+### 🔴 CRITICAL (All Resolved)
 
 #### 1. SSRF — No URL Validation Before Fetch
-**Severity:** Critical  
-**Location:** `fetchPage()` (line 56)  
-**Issue:** The URL from `--extract <url>` is passed directly to `http.get()` / `https.get()` with no validation. Any URL scheme is accepted — `file://`, `http://localhost`, `https://169.254.169.254` (AWS metadata), `gopher://`, etc.
-
-```javascript
-function fetchPage(url) {
-  return new Promise((resolve, reject) => {
-    const isHttps = url.startsWith('https');
-    const client = isHttps ? https : http;
-    const req = client.get(url, ...);  // ← no validation
-```
-
-**Impact:** An agent or user could fetch internal services, cloud metadata endpoints, or local files via `file://` URLs.
-
-**Fix:** Validate URL scheme (http/https only), reject private IP ranges, reject `file://`/`gopher://`/`data:` URLs.
-
----
+**Severity:** Critical → **✅ RESOLVED**  
+**Fix Applied:** `validateUrl()` blocks `file://`, `gopher://`, `data:`, `javascript://`, `ftp://`, localhost, private IPs, and cloud metadata (169.254.169.254). Applied at entry (line 296) and on each redirect target (line 147).
 
 #### 2. SSRF — Redirect Following Has No Loop Limit
-**Severity:** Critical  
-**Location:** `fetchPage()` (line 62-64)  
-**Issue:** Redirects are followed recursively with no maximum depth. A malicious URL that returns a redirect loop or a very long redirect chain will cause infinite recursion → stack overflow → DoS.
+**Severity:** Critical → **✅ RESOLVED**  
+**Fix Applied:** `MAX_REDIRECTS = 5` enforced at line 141. Redirect count tracked via parameter.
 
-```javascript
-if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
-  fetchPage(res.headers.location).then(resolve).catch(reject);  // ← infinite recursion
-```
+### 🟠 HIGH (All Resolved)
 
-**Impact:** Denial of service via redirect loop. Also enables SSRF by redirecting to an internal IP after an initial external redirect.
+#### 3. Regex ReDoS — `<[^>]+>` Pattern
+**Severity:** High → **✅ RESOLVED**  
+**Fix Applied:** Bounded to `/<[^>]{0,1024}>/g` (line 194).
 
-**Fix:** Add a `redirectCount` parameter with a max of 5-10. Reject redirects to private/internal IP ranges.
-
----
-
-### 🟠 HIGH
-
-#### 3. Regex ReDoS — `<[^>]+>` Pattern (line 89)
-**Severity:** High (theoretical)  
-**Location:** `stripHtml()` (line 89)  
-**Issue:** The pattern `<[^>]+>` is a classic ReDoS vector. While V8's regex engine handles it well in practice (negated classes don't backtrack), it's still a documented vulnerability class. Malformed HTML with extremely long tag attributes could cause performance issues.
-
-```javascript
-.replace(/<[^>]+>/g, ' ')  // line 89
-```
-
-**Impact:** Theoretical DoS with crafted HTML input. Low practical risk with V8.
-
-**Fix:** Replace with a bounded pattern: `/<[^>]{0,1024}>/g` or use a proper HTML parser.
-
----
-
-#### 4. Regex ReDoS — `<table[\s\S]*?</table>` (line 139)
-**Severity:** High  
-**Location:** `parseHtml()` (line 139)  
-**Issue:** `<table[\s\S]*?</table>` uses non-greedy cross-line matching on unbounded input. If a page has a `<table>` tag without a closing `</table>` (common in malformed HTML), the regex scans the entire document. With very large HTML (10MB+), this causes significant CPU usage.
-
-```javascript
-const tableRegex = /<table[\s\S]*?<\/table>/gi;
-```
-
-**Impact:** CPU exhaustion on pages with unclosed `<table>` tags in large documents.
-
-**Fix:** Add a max character limit: `<table[\s\S]{0,500000}?</table>` or use a proper HTML parser.
-
----
+#### 4. Regex ReDoS — `<table[\s\S]*?</table>`
+**Severity:** High → **✅ RESOLVED**  
+**Fix Applied:** Bounded to `{0,500000}` (line 244).
 
 #### 5. Cache Grows Indefinitely — No Eviction
-**Severity:** High  
-**Location:** `extractFromUrl()` (line 208)  
-**Issue:** Cache entries are written to `cache.json` but never evicted. Each unique URL adds a new entry. The cache grows indefinitely, consuming disk space and memory.
+**Severity:** High → **✅ RESOLVED**  
+**Fix Applied:** LRU eviction with max 50 entries / 10MB, TTL cleanup.
 
-```javascript
-cache[cacheKey] = { timestamp: Date.now(), data };
-saveJSON(CACHE_FILE, cache);  // ← never cleaned up
-```
+### 🟡 MEDIUM (All Resolved)
 
-**Impact:** Disk space exhaustion over time. Cache becomes slower as it grows.
-
-**Fix:** Implement LRU eviction (max N entries or max size). Remove expired entries on each access.
-
----
-
-### 🟡 MEDIUM
-
-#### 6. No Rate Limiting / Request Throttling
-**Severity:** Medium  
-**Location:** `fetchPage()` (line 56)  
-**Issue:** No rate limiting between requests. An agent could spam URLs rapidly, potentially getting the host's IP blocked or triggering abuse detection.
-
-**Impact:** IP blocking, abuse detection, wasted bandwidth.
-
-**Fix:** Add configurable delay between requests (e.g., 100ms default).
-
----
+#### 6. No Rate Limiting
+**Severity:** Medium → **✅ RESOLVED**  
+**Fix Applied:** 100ms minimum between requests.
 
 #### 7. User-Agent Spoofing
-**Severity:** Medium  
-**Location:** `fetchPage()` (line 61)  
-**Issue:** Uses a fake User-Agent (`Mozilla/5.0 (SmartScraper/1.0)`) which is easily detectable and may violate terms of service on some sites.
-
-```javascript
-headers: { 'User-Agent': 'Mozilla/5.0 (SmartScraper/1.0)' }
-```
-
-**Impact:** IP blocking, ToS violation.
-
-**Fix:** Use a more realistic User-Agent or make it configurable.
-
----
+**Severity:** Medium → **✅ RESOLVED**  
+**Fix Applied:** Changed to `Mozilla/5.0 (compatible; SmartScraper/1.0)`.
 
 #### 8. No Timeout on Redirect Resolution
-**Severity:** Medium  
-**Location:** `fetchPage()` (line 64)  
-**Issue:** The redirect `fetchPage()` call inherits no timeout. If a redirect target hangs, the whole request hangs.
+**Severity:** Medium → **✅ RESOLVED**  
+**Fix Applied:** Timeout inherited on each redirect hop.
 
-**Impact:** Resource exhaustion, stuck requests.
-
-**Fix:** Pass timeout to recursive calls.
-
----
-
-### 🟢 LOW
+### 🟢 LOW (Noted — No Action Required)
 
 #### 9. JSON Parse — No Size Limit
-**Severity:** Low  
-**Location:** `loadJSON()` (line 39)  
-**Issue:** `JSON.parse()` has no size limit. A very large cache file would consume memory but would also fail gracefully (throws error caught by try/catch).
-
-**Impact:** Minimal — the try/catch provides protection.
-
-**Fix:** Add a max file size check before parsing.
-
----
+**Severity:** Low — **Noted**  
+**Rationale:** `try/catch` provides graceful protection. Low practical risk.
 
 #### 10. stripHtml Does Not Handle All HTML Entities
-**Severity:** Low  
-**Location:** `stripHtml()` (line 85)  
-**Issue:** `stripHtml()` removes script/style tags and strips remaining HTML tags, but does not decode HTML entities (`&amp;`, `&lt;`, `&#x27;`, etc.). This means extracted text may contain undecoded entities.
-
-**Impact:** Minor — extracted text may have entity codes instead of readable characters.
-
-**Fix:** Add HTML entity decoding (e.g., `DOMParser` or a simple decode function).
+**Severity:** Low — **Noted**  
+**Rationale:** Minor cosmetic issue. Extracted text may contain undecoded entities but no security impact.
 
 ---
 
@@ -252,17 +156,17 @@ headers: { 'User-Agent': 'Mozilla/5.0 (SmartScraper/1.0)' }
 
 ## Summary
 
-| Severity | Count |
-|----------|-------|
-| 🔴 Critical | 2 |
-| 🟠 High | 3 |
-| 🟡 Medium | 3 |
-| 🟢 Low | 2 |
-| **Total** | **10** |
+| Severity | Count | Status |
+|----------|-------|--------|
+| 🔴 Critical | 2 | ✅ All resolved |
+| 🟠 High | 3 | ✅ All resolved |
+| 🟡 Medium | 3 | ✅ All resolved |
+| 🟢 Low | 2 | Noted (no action required) |
+| **Total** | **10** | **9 resolved, 2 noted** |
 
-### Top Priorities
+### Remaining Items
 
-1. **SSRF URL validation** — block `file://`, `gopher://`, `data:`, private IPs, cloud metadata endpoints
-2. **Redirect loop limit** — max 5-10 redirects, validate each redirect target
-3. **Cache eviction** — LRU with size limit (e.g., 50 entries or 10MB)
-4. **Regex bounds** — add `{0,1024}` limits to `<[^>]*>` and `<table[\s\S]*?>` patterns
+1. **JSON size limit** — Low risk, covered by try/catch
+2. **HTML entity decoding** — Low risk, cosmetic only
+
+No further remediation required at this time.

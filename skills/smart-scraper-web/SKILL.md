@@ -1,13 +1,13 @@
 ---
 name: web-data-extractor
-description: Extract structured data from websites. Tables, lists, prices, articles, metadata. HTML parsing with caching. Zero external dependencies.
+description: Extract structured data from websites. Tables, lists, prices, articles, metadata. Zero external dependencies.
 ---
 
 # Web Data Extractor 🕷️
 
-> ⚠️ **Security Note** — This skill **sends user-provided URLs over the network** and **stores fetched page contents locally in a cache** (`memory/scraper-cache/cache.json`). Do not use with sensitive, authenticated, internal, or attacker-controlled URLs until redirect targets are revalidated. Clear the cache (`rm memory/scraper-cache/cache.json`) after scraping if page contents or URLs may be sensitive.
+> ⚠️ **Security Note** — This skill **sends user-provided URLs over the network**. Do not use with sensitive, authenticated, internal, or attacker-controlled URLs until redirect targets are revalidated.
 >
-> **Privacy Notice** — By default, scraped page content is cached to disk. Each scrape writes **title, headings, paragraphs, links, tables, lists, prices, images, and metadata** to `cache.json`. Use `--no-cache` flag to disable local persistence. A warning is printed to stderr on every cache write.
+> **Privacy Notice** — Caching is **disabled by default**. Use `--cache` to enable local persistence of scraped content to `memory/scraper-cache/cache.json`. Each scrape writes **title, headings, paragraphs, links, tables, lists, prices, images, and metadata** to `cache.json`. Use `--no-cache` to explicitly disable (no-op, since caching is off by default).
 
 **Stop copying data by hand. Start extracting it automatically.**
 
@@ -15,7 +15,7 @@ description: Extract structured data from websites. Tables, lists, prices, artic
 
 Web content is everywhere but inaccessible to agents. `web_fetch` gets raw HTML, but you need structure — tables, prices, lists, article text — to make it useful.
 
-Smart Scraper turns raw HTML into structured data with one command.
+Web Data Extractor turns raw HTML into structured data with one command.
 
 ## Quick Start
 
@@ -27,13 +27,21 @@ node skills/smart-scraper/smart-scraper.js --extract https://example.com
 
 Returns title, headings, paragraphs, links, tables, lists, prices, images, and metadata.
 
-### Extract without caching (privacy mode)
+### Extract without caching (default — privacy mode)
 
 ```bash
 node skills/smart-scraper/smart-scraper.js --extract --no-cache https://example.com
 ```
 
-Disables local cache persistence — scraped content is not written to disk.
+Caching is disabled by default. This flag is a no-op but available for explicit privacy control.
+
+### Extract with caching enabled (optional)
+
+```bash
+node skills/smart-scraper/smart-scraper.js --extract --cache https://example.com
+```
+
+Enables local cache persistence — scraped content is written to `cache.json`.
 
 ### Extract tables only
 
@@ -106,23 +114,28 @@ node skills/smart-scraper/smart-scraper.js --status
 - Shows first 5 paragraphs as preview
 - Ideal for blog posts and documentation
 
-### Caching
+### Caching (opt-in)
 
+- Enable with `--cache` flag; **disabled by default** for privacy
 - 5-minute TTL on fetched pages
 - LRU eviction: max 50 entries or 10MB
-- Reduces redundant network calls
 - Cache stats via `--status`
 
 ## Configuration
 
-Cache stored in: `memory/scraper-cache/cache.json`
+Cache stored in: `memory/scraper-cache/cache.json` (only when `--cache` is set).
 
 Override data directory:
 ```bash
 --dir /path/to/data
 ```
 
-Disable cache (privacy mode):
+Enable cache:
+```bash
+--cache
+```
+
+Disable cache (default):
 ```bash
 --no-cache
 ```
@@ -134,8 +147,8 @@ Disable cache (privacy mode):
 - **Redirect limit** — max 5 redirects to prevent loops and SSRF
 - **Rate limiting** — 100ms minimum between requests
 - **Bounded regex** — all patterns have `{0,N}` limits to prevent ReDoS
-- **Cache eviction** — LRU with 50-entry / 10MB limits
-- **Cache privacy** — `--no-cache` flag disables local persistence; warning shown before first cache write
+- **Cache eviction** — LRU with 50-entry / 10MB limits (only when `--cache` is enabled)
+- **Cache privacy** — caching is **disabled by default**; use `--cache` to opt in
 - **No eval, no execSync, no command injection** — pure parsing, no shell interaction
 
 ## Agent Protocol
@@ -164,14 +177,14 @@ When extracting web content:
 |------|-----------|--------|--------|----------|---------|
 | `web_fetch` | Raw HTML | ❌ | ❌ | ❌ | ❌ |
 | Puppeteer | ✅ | ✅ | ✅ | ✅ | ❌ |
-| **Smart Scraper** | **✅** | **✅** | **✅** | **✅** | **✅** |
+| **Web Data Extractor** | **✅** | **✅** | **✅** | **✅** | **⚠️ (opt-in)** |
 
-**Smart Scraper gives you structured extraction + caching with zero dependencies.**
+**Web Data Extractor gives you structured extraction with zero dependencies. Use `--cache` to enable caching.**
 
 ## Design Principles
 
 1. **Zero setup** — Works immediately, no config needed
 2. **No dependencies** — Pure Node.js http/https, no npm packages
 3. **Structured output** — Returns parsed data, not raw HTML
-4. **Cached** — Reduces redundant fetches automatically
+4. **Privacy-first caching** — Caching is disabled by default; enable with `--cache`
 5. **Multi-mode** — Extract everything or target specific data types

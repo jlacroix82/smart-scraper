@@ -1,7 +1,7 @@
-# Security Audit Fix Summary - Smart Scraper
+# Security Audit Fix Summary - Web Data Extractor
 
 ## Issue Addressed
-The smart-scraper skill was storing extracted page data persistently in a local cache file (`memory/scraper-cache/cache.json`) without any user notice or consent mechanism. This meant scraped content (article text, metadata, links, prices, etc.) persisted on disk without the user knowing, which is a privacy concern.
+The web-data-extractor skill was storing extracted page data persistently in a local cache file (`memory/scraper-cache/cache.json`) without any user notice or consent mechanism. This meant scraped content (article text, metadata, links, prices, etc.) persisted on disk without the user knowing, which is a privacy concern.
 
 ## Analysis
 After examining the current implementation, I found that the skill already has some security improvements:
