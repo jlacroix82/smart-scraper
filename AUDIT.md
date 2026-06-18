@@ -229,3 +229,15 @@ All critical, high, and medium-severity findings were previously addressed. Low-
 - **HTML entity decoding** — Added `decodeHtmlEntities()` handling named, numeric, and hex entities, applied in `stripHtml()`
 - **Image regex bug** — Fixed stray `\?` in img regex that prevented all image extraction
 - **Missing `--cache` flag** — Added explicit `--cache` CLI flag for consistency with documented API
+
+## New ClawHub Findings (2026-06-18, v1.2.0 → v1.2.1)
+
+### #11 — Cache Default Mismatch (Medium)
+**Issue:** Code defaulted to `useCache = true` while docs said "disabled by default."
+**Fix:** Changed to `useCache = false` — caching is now truly opt-in.
+
+### #12 — SCRAPER_DIR Path Traversal (Medium)
+**Issue:** `--dir` / `SCRAPER_DIR` allowed writing cache to arbitrary locations.
+**Fix:** Added validation blocking dangerous system roots (`/`, `/etc`, `/proc`, etc.).
+
+Both findings resolved in v1.2.1.

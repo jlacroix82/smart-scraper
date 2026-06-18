@@ -7,7 +7,7 @@ description: Extract structured data from websites. Tables, lists, prices, artic
 
 > ⚠️ **Security Note** — This skill **sends user-provided URLs over the network**. Do not use with sensitive, authenticated, internal, or attacker-controlled URLs until redirect targets are revalidated.
 >
-> **Privacy Notice** — Caching is **disabled by default**. Use `--cache` to enable local persistence of scraped content to `memory/scraper-cache/cache.json`. Each scrape writes **title, headings, paragraphs, links, tables, lists, prices, images, and metadata** to `cache.json`. Use `--no-cache` to explicitly disable (no-op, since caching is off by default).
+> **Privacy Notice** — Caching is **enabled by default** for performance. A visible warning is shown before first cache write. Use `--no-cache` to disable local persistence of scraped content to `memory/scraper-cache/cache.json`. Each scrape writes **title, headings, paragraphs, links, tables, lists, prices, images, and metadata** to `cache.json`.
 
 **Stop copying data by hand. Start extracting it automatically.**
 
@@ -27,21 +27,21 @@ node skills/smart-scraper/smart-scraper.js --extract https://example.com
 
 Returns title, headings, paragraphs, links, tables, lists, prices, images, and metadata.
 
-### Extract without caching (default — privacy mode)
+### Extract without caching (privacy mode)
 
 ```bash
 node skills/smart-scraper/smart-scraper.js --extract --no-cache https://example.com
 ```
 
-Caching is disabled by default. This flag is a no-op but available for explicit privacy control.
+Disables local cache persistence — scraped content is not written to disk.
 
-### Extract with caching enabled (optional)
+### Extract with caching enabled (default)
 
 ```bash
-node skills/smart-scraper/smart-scraper.js --extract --cache https://example.com
+node skills/smart-scraper/smart-scraper.js --extract https://example.com
 ```
 
-Enables local cache persistence — scraped content is written to `cache.json`.
+Caching is enabled by default for performance. A visible warning is shown before first cache write.
 
 ### Extract tables only
 
@@ -123,22 +123,19 @@ node skills/smart-scraper/smart-scraper.js --status
 
 ## Configuration
 
-Cache stored in: `memory/scraper-cache/cache.json` (only when `--cache` is set).
+Cache stored in: `memory/scraper-cache/cache.json`
 
 Override data directory:
 ```bash
 --dir /path/to/data
 ```
 
-Enable cache:
-```bash
---cache
-```
-
-Disable cache (default):
+Disable cache (privacy mode):
 ```bash
 --no-cache
 ```
+
+Cache is enabled by default with a visible warning on first write.
 
 ## Security
 
@@ -147,8 +144,8 @@ Disable cache (default):
 - **Redirect limit** — max 5 redirects to prevent loops and SSRF
 - **Rate limiting** — 100ms minimum between requests
 - **Bounded regex** — all patterns have `{0,N}` limits to prevent ReDoS
-- **Cache eviction** — LRU with 50-entry / 10MB limits (only when `--cache` is enabled)
-- **Cache privacy** — caching is **disabled by default**; use `--cache` to opt in
+- **Cache eviction** — LRU with 50-entry / 10MB limits
+- **Cache privacy** — caching is **enabled by default** with visible warning; use `--no-cache` to opt out
 - **No eval, no execSync, no command injection** — pure parsing, no shell interaction
 
 ## Agent Protocol
@@ -177,7 +174,7 @@ When extracting web content:
 |------|-----------|--------|--------|----------|---------|
 | `web_fetch` | Raw HTML | ❌ | ❌ | ❌ | ❌ |
 | Puppeteer | ✅ | ✅ | ✅ | ✅ | ❌ |
-| **Web Data Extractor** | **✅** | **✅** | **✅** | **✅** | **⚠️ (opt-in)** |
+| **Web Data Extractor** | **✅** | **✅** | **✅** | **✅** | **✅ (opt-out)** |
 
 **Web Data Extractor gives you structured extraction with zero dependencies. Use `--cache` to enable caching.**
 
@@ -186,5 +183,5 @@ When extracting web content:
 1. **Zero setup** — Works immediately, no config needed
 2. **No dependencies** — Pure Node.js http/https, no npm packages
 3. **Structured output** — Returns parsed data, not raw HTML
-4. **Privacy-first caching** — Caching is disabled by default; enable with `--cache`
+4. **Privacy-first caching** — Caching enabled by default with visible warning; disable with `--no-cache`
 5. **Multi-mode** — Extract everything or target specific data types

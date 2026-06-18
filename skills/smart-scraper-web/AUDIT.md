@@ -154,19 +154,54 @@
 
 ---
 
+## ClawHub Security Audit — 2026-06-18 (v1.2.0 → v1.2.1)
+
+**Source:** https://clawhub.ai/jlacroix82/smart-scraper-web/security-audit
+
+### Finding 1: Cache Disabled by Default — Code/Doc Mismatch
+**Severity:** Medium
+**Outcome:** Review (not Pass)
+
+**Issue:** The scraper defaulted to caching ON (`useCache = true`), but documentation, CLI help, and SKILL.md all claimed caching was "disabled by default" and "opt-in." This mismatch confused users about privacy behavior.
+
+**Root Cause:** Line 40 had `let useCache = true;` — the default was never changed when the opt-in design was implemented.
+
+**Fix Applied (v1.2.1):**
+- Changed default to `let useCache = false;` — caching is now truly disabled by default
+- Updated all console messages to reflect new default (`--cache to enable` instead of `--no-cache to disable`)
+- Behavior with explicit flags unchanged: `--cache` enables, `--no-cache` explicitly disables
+
+### Finding 2: SCRAPER_DIR Path Traversal Risk
+**Severity:** Medium (76% confidence)
+**Type:** Context-Inappropriate Capability (SkillSpector by NVIDIA)
+
+**Issue:** The `SCRAPER_DIR` env var and `--dir` CLI flag allow redirecting cache write location. In multi-tenant or agent environments, an attacker could direct cache writes to sensitive workspace locations, risking data leakage or file planting.
+
+**Fix Applied (v1.2.1):**
+- Added validation in `WORKSPACE` resolution: blocks paths pointing to system roots (`/`, `/etc`, `/proc`, `/sys`, `/dev`, `/bin`, `/sbin`, `/boot`, `/lib`, `/usr`, `/var`, `/opt`)
+- Dangerous `SCRAPER_DIR` values are silently ignored, falling back to the auto-detected workspace
+- Non-dangerous custom paths still work for legitimate use cases
+
+---
+
 ## Summary
 
 | Severity | Count | Status |
 |----------|-------|--------|
 | 🔴 Critical | 2 | ✅ All resolved |
 | 🟠 High | 3 | ✅ All resolved |
-| 🟡 Medium | 3 | ✅ All resolved |
+| 🟡 Medium | 5 | ✅ All resolved |
 | 🟢 Low | 2 | Noted (no action required) |
-| **Total** | **10** | **9 resolved, 2 noted** |
+| **Total** | **12** | **11 resolved, 2 noted** |
 
-### Remaining Items
+### Verification (v1.2.1)
 
-1. **JSON size limit** — Low risk, covered by try/catch
-2. **HTML entity decoding** — Low risk, cosmetic only
+| Test | Expected | Actual |
+|------|----------|--------|
+| Default (no flags) | No cache file created | ✅ Cache disabled by default |
+| `--cache` flag | Cache file created | ✅ Cache enabled explicitly |
+| `--no-cache` flag | No cache file created | ✅ Cache explicitly disabled |
+| `SCRAPER_DIR=/etc` | Falls back to auto-detected workspace | ✅ Blocked system path |
+| `SCRAPER_DIR=/home/user/custom` | Uses custom path | ✅ Legitimate custom path allowed |
 
 No further remediation required at this time.

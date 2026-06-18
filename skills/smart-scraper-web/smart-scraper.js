@@ -19,7 +19,18 @@ const http = require('http');
 const https = require('https');
 
 const WORKSPACE = (() => {
-  if (process.env.SCRAPER_DIR) return process.env.SCRAPER_DIR;
+  if (process.env.SCRAPER_DIR) {
+    // Validate: resolve to real path and ensure it's not traversing into dangerous areas
+    const customDir = path.resolve(process.env.SCRAPER_DIR);
+    // Block absolute paths that point to root, /etc, /proc, /sys, /dev etc.
+    const blockedRoots = ['/', '/etc', '/proc', '/sys', '/dev', '/bin', '/sbin', '/boot', '/lib', '/usr', '/var', '/opt'];
+    for (const root of blockedRoots) {
+      if (customDir === root || customDir.startsWith(root + path.sep)) {
+        return path.resolve(__dirname, '..', '..');
+      }
+    }
+    return customDir;
+  }
   let dir = __dirname;
   const root = path.parse(dir).root;
   for (let i = 0; i < 10; i++) {
@@ -39,7 +50,7 @@ const MAX_CACHE_BYTES = 10 * 1024 * 1024; // 10MB
 const CACHE_TTL = 300000; // 5 minutes
 
 // ── CLI flags ────────────────────────────────────────────────────────────────
-let useCache = true; // Cache enabled by default; --no-cache to disable
+let useCache = false; // Cache disabled by default; --cache to enable
 
 // ── Redirect limits ──────────────────────────────────────────────────────────
 const MAX_REDIRECTS = 5;
@@ -389,7 +400,7 @@ async function extractFromUrl(url, mode = 'all') {
       // SECURITY: Warn every time caching is active — privacy must be visible
       console.error(`⚠️  [smart-scraper] Caching scraped data to disk: ${CACHE_FILE}`);
       console.error(`    Stored: title, headings, paragraphs, links, tables, lists, prices, images, metadata`);
-      console.error(`    To disable: add --no-cache to your command`);
+      console.error(`    To enable: add --cache to your command`);
       // Store full parsed data for cache hits to work correctly
       cache[cacheKey] = { timestamp: Date.now(), data };
       saveJSON(CACHE_FILE, cache);
