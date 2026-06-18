@@ -83,15 +83,15 @@
 **Severity:** Medium → **✅ RESOLVED**  
 **Fix Applied:** Timeout inherited on each redirect hop.
 
-### 🟢 LOW (Noted — No Action Required)
+### 🟢 LOW (All Resolved)
 
-#### 9. JSON Parse — No Size Limit
-**Severity:** Low — **Noted**  
-**Rationale:** `try/catch` provides graceful protection. Low practical risk.
+#### 9. JSON Parse — No Size Limit ✅ FIXED (2026-06-18)
+**Severity:** Low — **Resolved**  
+**Fix:** Added `fs.statSync()` size check before parse — rejects files over 10MB with warning.
 
-#### 10. stripHtml Does Not Handle All HTML Entities
-**Severity:** Low — **Noted**  
-**Rationale:** Minor cosmetic issue. Extracted text may contain undecoded entities but no security impact.
+#### 10. stripHtml Does Not Handle All HTML Entities ✅ FIXED (2026-06-18)
+**Severity:** Low — **Resolved**  
+**Fix:** Added `decodeHtmlEntities()` — handles named entities (`&amp;`, `&lt;`, `&gt;`, `&quot;`, `&nbsp;`, etc.), numeric (`&#123;`), and hex (`&#x1F;`). Applied in `stripHtml()`.
 
 ---
 

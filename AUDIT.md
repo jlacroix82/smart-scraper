@@ -221,10 +221,11 @@
 
 ### Current State
 
-All critical and high-severity findings have been resolved. Medium-severity findings (silent cache persistence, missing manifest) have been addressed with:
-- `--no-cache` flag for privacy mode
-- Visible warnings before caching
-- `manifest.json` with capability declarations
-- Updated documentation
+**All findings have been resolved.**
 
-Low-severity findings are documented but not yet fixed (HTML entity decoding, JSON size limit).
+All critical, high, and medium-severity findings were previously addressed. Low-severity findings (HTML entity decoding, JSON size limit) were fixed on 2026-06-18:
+
+- **JSON parse size limit** — Added `fs.statSync()` size check before `JSON.parse()`, rejecting files over 10MB with a warning
+- **HTML entity decoding** — Added `decodeHtmlEntities()` handling named, numeric, and hex entities, applied in `stripHtml()`
+- **Image regex bug** — Fixed stray `\?` in img regex that prevented all image extraction
+- **Missing `--cache` flag** — Added explicit `--cache` CLI flag for consistency with documented API

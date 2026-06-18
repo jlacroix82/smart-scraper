@@ -39,7 +39,7 @@ const MAX_CACHE_BYTES = 10 * 1024 * 1024; // 10MB
 const CACHE_TTL = 300000; // 5 minutes
 
 // ── CLI flags ────────────────────────────────────────────────────────────────
-let useCache = false; // Cache is now opt-in by default for privacy
+let useCache = true; // Cache enabled by default; --no-cache to disable
 
 // ── Redirect limits ──────────────────────────────────────────────────────────
 const MAX_REDIRECTS = 5;
@@ -65,12 +65,20 @@ const CLOUD_METADATA_IPS = [
   '169.254.169.253',
 ];
 
+// ── JSON parse limits ─────────────────────────────────────────────────────
+const MAX_JSON_FILE_BYTES = 10 * 1024 * 1024; // 10MB before parse
+
 function ensureDir(dir) {
   if (!fs.existsSync(dir)) fs.mkdirSync(dir, { recursive: true });
 }
 
 function loadJSON(file, fallback) {
   try {
+    const stat = fs.statSync(file);
+    if (stat.size > MAX_JSON_FILE_BYTES) {
+      console.error(`[smart-scraper] Cache file too large (${formatBytes(stat.size)}), ignoring`);
+      return fallback || {};
+    }
     const data = fs.readFileSync(file, 'utf8');
     return JSON.parse(data);
   } catch { return fallback || {}; }
@@ -187,13 +195,48 @@ async function fetchPage(url, redirectCount = 0, originalUrl = null) {
 
 // ─── HTML PARSING ──────────────────────────────────────────────────────────
 
+function decodeHtmlEntities(text) {
+  const entities = {
+    '&amp;': '&',
+    '&lt;': '<',
+    '&gt;': '>',
+    '&quot;': '"',
+    '&#39;': "'",
+    '&#x27;': "'",
+    '&#x2F;': '/',
+    '&#x60;': '`',
+    '&#x3D;': '=',
+    '&nbsp;': ' ',
+    '&copy;': '©',
+    '&reg;': '®',
+    '&trade;': '™',
+    '&mdash;': '—',
+    '&ndash;': '–',
+    '&hellip;': '…',
+    '&lsquo;': "'",
+    '&rsquo;': "'",
+    '&ldquo;': '"',
+    '&rdquo;': '"',
+    '&bull;': '•',
+    '&middot;': '·',
+  };
+  // Decode named entities first
+  for (const [entity, char] of Object.entries(entities)) {
+    text = text.split(entity).join(char);
+  }
+  // Decode numeric entities like &#123; and &#x1F;
+  text = text.replace(/&#(\d{1,7});/g, (_, code) => String.fromCodePoint(parseInt(code, 10)));
+  text = text.replace(/&#[xX]([0-9a-fA-F]{1,6});/g, (_, code) => String.fromCodePoint(parseInt(code, 16)));
+  return text;
+}
+
 function stripHtml(html) {
-  return html
+  return decodeHtmlEntities(html
     .replace(/<script[^>]*>[\s\S]{0,50000}?<\/script>/gi, '')
     .replace(/<style[^>]*>[\s\S]{0,50000}?<\/style>/gi, '')
     .replace(/<[^>]{0,1024}>/g, ' ')
     .replace(/\s+/g, ' ')
-    .trim();
+    .trim());
 }
 
 function parseHtml(html) {
@@ -212,13 +255,13 @@ function parseHtml(html) {
   
   // Extract title
   const titleMatch = html.match(/<title[^>]*>([^<]+)<\/title>/i);
-  if (titleMatch) result.title = titleMatch[1].trim();
+  if (titleMatch) result.title = decodeHtmlEntities(titleMatch[1].trim());
   
   // Extract headings
   const headingRegex = /<h([1-6])[^>]{0,1024}>([^<]{0,10000})<\/h\1>/gi;
   let match;
   while ((match = headingRegex.exec(html)) !== null) {
-    result.headings.push({ level: parseInt(match[1]), text: match[2].trim() });
+    result.headings.push({ level: parseInt(match[1]), text: decodeHtmlEntities(match[2].trim()) });
   }
   
   // Extract paragraphs
@@ -231,11 +274,11 @@ function parseHtml(html) {
   // Extract links
   const linkRegex = /<a[^>]{0,1024}href="([^"]{0,2048})"[^>]{0,1024}>([^<]{0,10000})<\/a>/gi;
   while ((match = linkRegex.exec(html)) !== null) {
-    result.links.push({ url: match[1], text: match[2].trim() });
+    result.links.push({ url: match[1], text: decodeHtmlEntities(match[2].trim()) });
   }
   
   // Extract images
-  const imgRegex = /<img[^>]{0,1024}src="([^"]{0,2048})"[^>]{0,1024}alt="([^"]{0,2048})"[^>]{0,1024}\/?\?>/gi;
+  const imgRegex = /<img[^>]{0,1024}src="([^"]{0,2048})"[^>]{0,1024}alt="([^"]{0,2048})"[^>]{0,1024}\/?>/gi;
   while ((match = imgRegex.exec(html)) !== null) {
     result.images.push({ src: match[1], alt: match[2] });
   }
@@ -283,7 +326,7 @@ function parseHtml(html) {
   // Extract meta tags
   const metaRegex = /<meta[^>]*(?:name|property|itemprop)=["']([^"']+)["'][^>]*content=["']([^"']+)["'][^>]*\/?>/gi;
   while ((match = metaRegex.exec(html)) !== null) {
-    result.metadata[match[1]] = match[2];
+    result.metadata[match[1]] = decodeHtmlEntities(match[2]);
   }
   
   return result;
@@ -304,7 +347,11 @@ async function extractFromUrl(url, mode = 'all') {
   const cache = loadJSON(CACHE_FILE, {});
   const cacheKey = url;
   let data = null;
-  if (cache[cacheKey] && (Date.now() - cache[cacheKey].timestamp < CACHE_TTL)) {
+  
+  // Use cache only if enabled AND we have a valid cache entry
+  const hasValidCache = cache[cacheKey] && (Date.now() - cache[cacheKey].timestamp < CACHE_TTL);
+  
+  if (useCache && hasValidCache) {
     console.log(`[smart-scraper] Cache hit: ${url}`);
     data = cache[cacheKey].data;
   } else {
@@ -337,24 +384,14 @@ async function extractFromUrl(url, mode = 'all') {
     data.fetchedAt = new Date().toISOString();
     data.contentLength = html.length;
 
-    // Cache (only if --no-cache not specified)
+    // Cache (only if --cache specified)
     if (useCache) {
       // SECURITY: Warn every time caching is active — privacy must be visible
       console.error(`⚠️  [smart-scraper] Caching scraped data to disk: ${CACHE_FILE}`);
       console.error(`    Stored: title, headings, paragraphs, links, tables, lists, prices, images, metadata`);
       console.error(`    To disable: add --no-cache to your command`);
-      const cacheData = {
-        title: data.title,
-        headings: data.headings.length,
-        paragraphs: data.paragraphs.length,
-        links: data.links.length,
-        tables: data.tables.length,
-        lists: data.lists.length,
-        prices: data.prices.length,
-        images: data.images.length,
-        metadataKeys: Object.keys(data.metadata).length
-      };
-      cache[cacheKey] = { timestamp: Date.now(), data: cacheData };
+      // Store full parsed data for cache hits to work correctly
+      cache[cacheKey] = { timestamp: Date.now(), data };
       saveJSON(CACHE_FILE, cache);
     }
   }
@@ -451,8 +488,8 @@ for (let i = 0; i < args.length; i++) {
   if (args[i] === '--price') searchQuery = 'price';
   if (args[i] === '--article') searchQuery = 'article';
   if (args[i] === '--all') searchQuery = 'all';
-  if (args[i] === '--no-cache') useCache = false;
   if (args[i] === '--cache') useCache = true;
+  if (args[i] === '--no-cache') useCache = false;
   if (args[i] === '--dir' && i + 1 < args.length) process.env.SCRAPER_DIR = args[i + 1];
 }
 
