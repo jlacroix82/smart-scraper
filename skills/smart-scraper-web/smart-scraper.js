@@ -43,6 +43,7 @@ const WORKSPACE = (() => {
 
 const CACHE_DIR = path.join(WORKSPACE, 'memory', 'scraper-cache');
 const CACHE_FILE = path.join(CACHE_DIR, 'cache.json');
+const DIFFS_DIR = path.join(CACHE_DIR, 'diffs');
 
 // ── Cache limits ─────────────────────────────────────────────────────────────
 const MAX_CACHE_ENTRIES = 50;
@@ -51,6 +52,7 @@ const CACHE_TTL = 300000; // 5 minutes
 
 // ── CLI flags ────────────────────────────────────────────────────────────────
 let useCache = false; // Cache disabled by default; --cache to enable
+let watchUrl = null, watchInterval = null, watchAlert = false, watchDiffOnly = false;
 
 // ── Redirect limits ──────────────────────────────────────────────────────────
 const MAX_REDIRECTS = 5;
@@ -462,6 +464,130 @@ async function extractFromUrl(url, mode = 'all') {
   return data;
 }
 
+// ─── CHANGE MONITORING ─────────────────────────────────────────────────────
+
+function urlToHash(url) {
+  let hash = 0;
+  for (let i = 0; i < url.length; i++) {
+    const char = url.charCodeAt(i);
+    hash = ((hash << 5) - hash) + char;
+    hash = hash & hash; // Convert to 32bit integer
+  }
+  return Math.abs(hash).toString(16);
+}
+
+function loadSnapshot(url) {
+  const hash = urlToHash(url);
+  const file = path.join(DIFFS_DIR, `${hash}.json`);
+  try {
+    return JSON.parse(fs.readFileSync(file, 'utf8'));
+  } catch { return null; }
+}
+
+function saveSnapshot(url, data) {
+  const hash = urlToHash(url);
+  ensureDir(DIFFS_DIR);
+  const file = path.join(DIFFS_DIR, `${hash}.json`);
+  fs.writeFileSync(file, JSON.stringify({ url, timestamp: new Date().toISOString(), data }, null, 2));
+}
+
+function diffSnapshots(oldData, newData) {
+  const changes = [];
+  
+  // Compare prices
+  const oldPrices = new Map(oldData.prices.map(p => [p.text.trim(), p]));
+  for (const p of newData.prices) {
+    const key = p.text.trim();
+    if (!oldPrices.has(key)) {
+      changes.push({ type: 'new', category: 'price', value: p.text });
+    } else {
+      const old = oldPrices.get(key);
+      if (old.amount !== p.amount) {
+        changes.push({ type: 'changed', category: 'price', from: old.amount, to: p.amount, text: key });
+      }
+    }
+  }
+  for (const [key, old] of oldPrices) {
+    if (!newData.prices.find(p => p.text.trim() === key)) {
+      changes.push({ type: 'removed', category: 'price', value: old.text });
+    }
+  }
+  
+  // Compare headings
+  const oldHeadings = new Set(oldData.headings.map(h => h.text.trim()));
+  for (const h of newData.headings) {
+    const text = h.text.trim();
+    if (!oldHeadings.has(text)) changes.push({ type: 'new', category: 'heading', value: text });
+  }
+  for (const text of oldHeadings) {
+    if (!newData.headings.find(h => h.text.trim() === text)) changes.push({ type: 'removed', category: 'heading', value: text });
+  }
+  
+  // Compare list items
+  const oldLists = oldData.lists.map(l => l.items.map(i => i.trim()).join('\n')).join('\n');
+  const newList = newData.lists.map(l => l.items.map(i => i.trim()).join('\n')).join('\n');
+  if (oldLists !== newList) {
+    changes.push({ type: 'changed', category: 'lists', from: `${oldData.lists.length} lists`, to: `${newData.lists.length} lists` });
+  }
+  
+  // Compare links
+  const oldLinks = new Set(oldData.links.map(l => l.href));
+  for (const l of newData.links) {
+    if (!oldLinks.has(l.href)) changes.push({ type: 'new', category: 'link', value: `${l.text} → ${l.href}` });
+  }
+  
+  return changes;
+}
+
+async function watchMode(url, interval = null, alertOnChange = false, diffOnly = false) {
+  ensureDir(DIFFS_DIR);
+  const snapshot = loadSnapshot(url);
+  
+  console.log(`[smart-scraper] Watching: ${url}`);
+  
+  if (!snapshot) {
+    // First run — capture baseline
+    console.log('[smart-scraper] No baseline found. Capturing baseline...');
+    const data = await extractFromUrl(url, 'all');
+    saveSnapshot(url, data);
+    console.log(`[smart-scraper] ✅ Baseline captured (${data.contentLength.toLocaleString()} chars)`);
+    return 0;
+  }
+  
+  // Re-scrape
+  console.log('[smart-scraper] Re-scraping...');
+  const newData = await extractFromUrl(url, 'all');
+  
+  // Compare
+  const changes = diffSnapshots(snapshot.data, newData);
+  
+  if (changes.length === 0) {
+    console.log('[smart-scraper] No changes detected.');
+    return 0;
+  }
+  
+  // Show changes
+  console.log(`\n[smart-scraper] ${changes.length} change(s) detected:\n`);
+  for (const c of changes) {
+    switch (c.type) {
+      case 'new':
+        console.log(`  ➕ New ${c.category}: ${c.value}`);
+        break;
+      case 'removed':
+        console.log(`  ➖ Removed ${c.category}: ${c.value}`);
+        break;
+      case 'changed':
+        console.log(`  🔄 Changed ${c.category}: ${c.from || c.text} → ${c.to || 'N/A'}`);
+        break;
+    }
+  }
+  
+  // Update snapshot
+  saveSnapshot(url, newData);
+  
+  return alertOnChange ? 1 : 0;
+}
+
 // ─── STATUS ────────────────────────────────────────────────────────────────
 
 function showStatus() {
@@ -494,6 +620,13 @@ for (let i = 0; i < args.length; i++) {
   if (args[i] === '--extract') cliMode = 'extract';
   if (args[i] === '--parse') cliMode = 'parse';
   if (args[i] === '--status') cliMode = 'status';
+  if (args[i] === '--watch') {
+    cliMode = 'watch';
+    watchUrl = args[i + 1];
+    watchInterval = args[i + 2];
+    watchAlert = args.includes('--alert-on-change');
+    watchDiffOnly = args.includes('--diff-only');
+  }
   if (args[i] === '--table') searchQuery = 'table';
   if (args[i] === '--list') searchQuery = 'list';
   if (args[i] === '--price') searchQuery = 'price';
@@ -520,6 +653,17 @@ function findArg() {
         console.log('Usage: smart-scraper.js --extract <url>');
       } else {
         await extractFromUrl(url, searchQuery || 'all');
+      }
+      break;
+    }
+    case 'watch': {
+      const url = watchUrl || findArg();
+      if (!url) {
+        console.log('Usage: smart-scraper.js --watch <url> [interval]');
+        console.log('  Flags: --alert-on-change (exit 1 on change), --diff-only');
+      } else {
+        const exitCode = await watchMode(url, watchInterval, watchAlert, watchDiffOnly);
+        process.exit(exitCode);
       }
       break;
     }

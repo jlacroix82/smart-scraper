@@ -65,6 +65,21 @@ node skills/smart-scraper/smart-scraper.js --parse "<html>...</html>"
 node skills/smart-scraper/smart-scraper.js --status
 ```
 
+### Watch for content changes
+
+```bash
+# Capture baseline (first run)
+node skills/smart-scraper/smart-scraper.js --watch https://example.com/pricing
+
+# Check for changes (second run)
+node skills/smart-scraper/smart-scraper.js --watch https://example.com/pricing
+
+# Cron integration (exit 1 on change)
+node skills/smart-scraper/smart-scraper.js --watch https://example.com/pricing --alert-on-change
+```
+
+Stores structured snapshots and diffs prices, headings, lists, and links between runs.
+
 ## Features
 
 ### HTML Parsing
@@ -109,6 +124,14 @@ node skills/smart-scraper/smart-scraper.js --status
 - **Cache warning**: Caching writes page content to disk. Use `--cache` to enable caching (opt-in by default).
 - **Privacy notice**: Cached data may contain sensitive content (article text, metadata, links, prices, etc.). Clear cache after scraping sensitive pages (`rm memory/scraper-cache/cache.json`).
 - **User Consent Required**: This skill will store extracted web page data locally on your device. If you do not wish to store any data locally, use the `--no-cache` flag. To enable caching, explicitly add the `--cache` flag to your command.
+
+### Change Monitoring
+
+- `--watch <url>` captures baseline on first run, diffs on subsequent runs
+- Compares prices, headings, lists, and links between scrapes
+- `--alert-on-change` exits with code 1 when changes detected (cron integration)
+- `--diff-only` shows only the diff output
+- Snapshots stored in `memory/scraper-cache/diffs/`
 
 ### Privacy
 
